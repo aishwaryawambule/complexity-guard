@@ -1,0 +1,5 @@
+{
+  "name": "complexity-guard",
+  "version": "0.1.0",
+  "description": "Flags algorithmic (Big-O) inefficiency of written Python at write time."
+}
