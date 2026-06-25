@@ -2,10 +2,16 @@
 """Claude Code PostToolUse hook: advisory algorithmic-complexity notes for written Python."""
 import json
 import sys
-from complexity_guard.analyze import analyze
+
+try:
+    from complexity_guard.analyze import analyze
+except Exception:
+    analyze = None
 
 
 def run(payload: dict) -> str:
+    if analyze is None:
+        return ""
     path = (payload.get("tool_input") or {}).get("file_path", "")
     if not path.endswith(".py"):
         return ""
@@ -25,13 +31,16 @@ def run(payload: dict) -> str:
 
 def main() -> int:
     try:
-        payload = json.load(sys.stdin)
-    except (json.JSONDecodeError, ValueError):
+        try:
+            payload = json.load(sys.stdin)
+        except (json.JSONDecodeError, ValueError):
+            return 0
+        note = run(payload)
+        if note:
+            print(note)
         return 0
-    note = run(payload)
-    if note:
-        print(note)
-    return 0
+    except Exception:
+        return 0
 
 
 if __name__ == "__main__":

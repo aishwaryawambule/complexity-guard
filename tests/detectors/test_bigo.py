@@ -27,3 +27,19 @@ def test_triple_loop_is_n_cubed():
 
 def test_single_loop_not_reported():
     assert detect_bigo(_tree(SINGLE)) == []
+
+NESTED_DEF = """
+def outer(items):
+    for a in items:
+        pass
+    def inner(items):
+        for b in items:
+            for c in items:
+                pass
+"""
+
+def test_nested_function_depth_not_counted_in_outer():
+    f = detect_bigo(_tree(NESTED_DEF))
+    assert len(f) == 1
+    assert f[0].function == "inner"
+    assert f[0].complexity == "O(n^2)"

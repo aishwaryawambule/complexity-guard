@@ -9,6 +9,8 @@ def _loop_depth_within(node: ast.AST, func: ast.AST) -> int:
     depth = 0
     cur = node
     while cur is not None and cur is not func:
+        if isinstance(cur, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            return 0
         if isinstance(cur, LOOP_TYPES):
             depth += 1
         cur = getattr(cur, "parent", None)
