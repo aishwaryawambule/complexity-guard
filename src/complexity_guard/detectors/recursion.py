@@ -1,6 +1,6 @@
 import ast
 from ..models import Finding
-from ..astutils import iter_functions
+from ..astutils import index_tree
 
 CACHE_NAMES = {"cache", "lru_cache"}
 
@@ -15,13 +15,10 @@ def _has_cache_decorator(func: ast.AST) -> bool:
     return False
 
 
-def detect_recursion_no_memo(tree: ast.Module) -> list[Finding]:
+def _detect_recursion_no_memo(idx) -> list[Finding]:
     findings = []
-    for func in iter_functions(tree):
-        self_calls = sum(
-            1 for n in ast.walk(func)
-            if isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id == func.name
-        )
+    for func in idx.functions:
+        self_calls = idx.self_calls.get(func, 0)
         if self_calls >= 2 and not _has_cache_decorator(func):
             findings.append(Finding(
                 detector="recursion-no-memo",
@@ -32,3 +29,7 @@ def detect_recursion_no_memo(tree: ast.Module) -> list[Finding]:
                 function=func.name,
             ))
     return findings
+
+
+def detect_recursion_no_memo(tree: ast.Module) -> list[Finding]:
+    return _detect_recursion_no_memo(index_tree(tree))

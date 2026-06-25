@@ -1,9 +1,8 @@
 import ast
-from complexity_guard import astutils as A
 from complexity_guard.detectors.loop_invariant import detect_loop_invariant_call
 
 def _tree(src):
-    t = ast.parse(src); A.annotate_parents(t); return t
+    return ast.parse(src)
 
 BAD = """
 def run(items, cfg):
@@ -62,3 +61,31 @@ def test_dynamic_dispatch_not_flagged():
     # The callee `fn` is itself the loop variable, so it differs each
     # iteration — not loop-invariant.
     assert detect_loop_invariant_call(_tree(DYNAMIC_DISPATCH)) == []
+
+INPLACE_MUTATION = """
+def pick(scored, max_pages):
+    chosen = []
+    for score, p in scored:
+        if len(chosen) >= max_pages:
+            break
+        chosen.append(p)
+    return chosen
+"""
+
+def test_call_on_inplace_mutated_name_not_flagged():
+    # `len(chosen)` is NOT invariant: chosen.append() grows it each iteration.
+    assert detect_loop_invariant_call(_tree(INPLACE_MUTATION)) == []
+
+FRESH_CONTAINER = """
+def group(items):
+    out = []
+    for x in items:
+        bucket = set()
+        bucket.add(x)
+        out.append(bucket)
+    return out
+"""
+
+def test_fresh_container_constructor_not_flagged():
+    # `set()` builds a new object each iteration; it can't be hoisted out.
+    assert detect_loop_invariant_call(_tree(FRESH_CONTAINER)) == []

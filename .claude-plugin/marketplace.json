@@ -5,7 +5,7 @@
     {
       "name": "complexity-guard",
       "source": "./plugin",
-      "description": "Flags algorithmic (Big-O) complexity smells in Python at write time — advisory, edit-aware, low false-positive."
+      "description": "Flags algorithmic (Big-O) complexity smells across many languages at write time — advisory, edit-aware, low false-positive."
     }
   ]
 }

@@ -1,9 +1,8 @@
 import ast
-from complexity_guard import astutils as A
 from complexity_guard.detectors.bigo import detect_bigo
 
 def _tree(src):
-    t = ast.parse(src); A.annotate_parents(t); return t
+    return ast.parse(src)
 
 TRIPLE = """
 def cube(items):
@@ -53,3 +52,33 @@ def fn():
 
 def test_constant_tuple_double_nest_not_flagged():
     assert detect_bigo(_tree(CONST_TUPLE_DOUBLE)) == []
+
+# Adjacency-list traversal: the inner loop walks one node's edge list per outer
+# step, so total work is O(V+E) -- linear, not O(V^2). Must NOT be flagged.
+ADJACENCY = """
+def bfs(graph, start):
+    seen = set()
+    queue = [start]
+    while queue:
+        u = queue.pop()
+        for v in graph[u]:
+            if v not in seen:
+                seen.add(v)
+                queue.append(v)
+"""
+
+def test_adjacency_traversal_not_flagged():
+    assert detect_bigo(_tree(ADJACENCY)) == []
+
+# A slice (`arr[i:]`) is a genuine sub-sequence scan -> triangular O(n^2). The
+# partition exclusion must NOT swallow this.
+TRIANGULAR = """
+def f(arr):
+    for i in range(len(arr)):
+        for x in arr[i:]:
+            use(x)
+"""
+
+def test_slice_iteration_still_flagged():
+    f = detect_bigo(_tree(TRIANGULAR))
+    assert len(f) == 1 and f[0].complexity == "O(n^2)"

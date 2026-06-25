@@ -1,9 +1,8 @@
 import ast
-from complexity_guard import astutils as A
 from complexity_guard.detectors.membership import detect_membership_in_loop
 
 def _tree(src):
-    t = ast.parse(src); A.annotate_parents(t); return t
+    return ast.parse(src)
 
 BAD = """
 def common(a, b):

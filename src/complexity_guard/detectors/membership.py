@@ -1,33 +1,18 @@
 import ast
 from ..models import Finding
-from ..astutils import loop_depth, enclosing_function, enclosing_function_name, iter_functions
+from ..astutils import index_tree, loop_depth, enclosing_function, enclosing_function_name
 
 
-def _list_names(func: ast.AST) -> set[str]:
-    names: set[str] = set()
-    for n in ast.walk(func):
-        if isinstance(n, ast.Assign):
-            v = n.value
-            is_list = isinstance(v, (ast.List, ast.ListComp)) or (
-                isinstance(v, ast.Call) and isinstance(v.func, ast.Name) and v.func.id == "list"
-            )
-            if is_list:
-                for t in n.targets:
-                    if isinstance(t, ast.Name):
-                        names.add(t.id)
-    return names
-
-
-def detect_membership_in_loop(tree: ast.Module) -> list[Finding]:
-    list_names_by_func = {f: _list_names(f) for f in iter_functions(tree)}
+def _detect_membership_in_loop(idx) -> list[Finding]:
+    list_names_by_func = idx.list_names
     findings = []
-    for node in ast.walk(tree):
-        if (isinstance(node, ast.Compare) and len(node.ops) == 1
-                and isinstance(node.ops[0], ast.In) and loop_depth(node) >= 1):
+    for node in idx.compares:
+        if (len(node.ops) == 1 and isinstance(node.ops[0], ast.In)
+                and loop_depth(node) >= 1):
             comp = node.comparators[0]
             if isinstance(comp, ast.Name):
                 func = enclosing_function(node)
-                if func is not None and comp.id in list_names_by_func.get(func, set()):
+                if func is not None and comp.id in list_names_by_func.get(func, ()):
                     findings.append(Finding(
                         detector="membership-in-loop",
                         lineno=node.lineno,
@@ -37,3 +22,7 @@ def detect_membership_in_loop(tree: ast.Module) -> list[Finding]:
                         function=enclosing_function_name(node),
                     ))
     return findings
+
+
+def detect_membership_in_loop(tree: ast.Module) -> list[Finding]:
+    return _detect_membership_in_loop(index_tree(tree))

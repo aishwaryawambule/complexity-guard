@@ -1,26 +1,16 @@
 import ast
 from ..models import Finding
-from ..astutils import loop_depth, enclosing_function, enclosing_function_name, iter_functions
+from ..astutils import index_tree, loop_depth, enclosing_function, enclosing_function_name
 
 
-def _str_names(func: ast.AST) -> set[str]:
-    names: set[str] = set()
-    for n in ast.walk(func):
-        if isinstance(n, ast.Assign) and isinstance(n.value, ast.Constant) and isinstance(n.value.value, str):
-            for t in n.targets:
-                if isinstance(t, ast.Name):
-                    names.add(t.id)
-    return names
-
-
-def detect_string_concat_in_loop(tree: ast.Module) -> list[Finding]:
-    str_names_by_func = {f: _str_names(f) for f in iter_functions(tree)}
+def _detect_string_concat_in_loop(idx) -> list[Finding]:
+    str_names_by_func = idx.str_names
     findings = []
-    for node in ast.walk(tree):
-        if (isinstance(node, ast.AugAssign) and isinstance(node.op, ast.Add)
-                and isinstance(node.target, ast.Name) and loop_depth(node) >= 1):
+    for node in idx.augassigns:
+        if (isinstance(node.op, ast.Add) and isinstance(node.target, ast.Name)
+                and loop_depth(node) >= 1):
             func = enclosing_function(node)
-            if func is not None and node.target.id in str_names_by_func.get(func, set()):
+            if func is not None and node.target.id in str_names_by_func.get(func, ()):
                 findings.append(Finding(
                     detector="string-concat-in-loop",
                     lineno=node.lineno,
@@ -30,3 +20,7 @@ def detect_string_concat_in_loop(tree: ast.Module) -> list[Finding]:
                     function=enclosing_function_name(node),
                 ))
     return findings
+
+
+def detect_string_concat_in_loop(tree: ast.Module) -> list[Finding]:
+    return _detect_string_concat_in_loop(index_tree(tree))

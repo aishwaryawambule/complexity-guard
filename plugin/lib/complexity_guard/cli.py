@@ -3,7 +3,7 @@ import json
 import sys
 from dataclasses import asdict
 from pathlib import Path
-from .analyze import analyze
+from .analyze import analyze_path
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -12,19 +12,23 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
 
-    source = Path(args.file).read_text()
-    findings = analyze(source)
+    # Accept editor-style "@path" file mentions (e.g. from a slash command's
+    # $ARGUMENTS) by treating a leading "@" as sugar for the bare path.
+    file = args.file[1:] if args.file.startswith("@") else args.file
+
+    source = Path(file).read_text()
+    findings = analyze_path(file, source)
 
     if args.json:
         print(json.dumps([asdict(f) for f in findings], indent=2))
         return 0
 
     if not findings:
-        print(f"✓ {args.file}: no complexity smells found")
+        print(f"✓ {file}: no complexity smells found")
         return 0
 
     for f in findings:
-        print(f"{args.file}:{f.lineno}  [{f.detector}] {f.complexity} — {f.message}")
+        print(f"{file}:{f.lineno}  [{f.detector}] {f.complexity} — {f.message}")
         print(f"    ↳ {f.suggestion}")
     return 0
 

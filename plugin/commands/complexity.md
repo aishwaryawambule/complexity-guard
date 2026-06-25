@@ -1,6 +1,6 @@
 ---
-description: Analyze a Python file's algorithmic complexity (Big-O smells + LLM anti-patterns)
-argument-hint: <path/to/file.py>
+description: Analyze a file's algorithmic complexity (Big-O smells + LLM anti-patterns)
+argument-hint: <path/to/file>
 ---
 
 Run the bundled analyzer and summarize the findings — group by function, and for

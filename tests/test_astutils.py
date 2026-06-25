@@ -10,7 +10,7 @@ def outer():
 
 def _tree(src):
     t = ast.parse(src)
-    A.annotate_parents(t)
+    A.index_tree(t)
     return t
 
 def test_loop_depth_of_inner_body():

@@ -5,12 +5,15 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "complexity-guard"
 version = "0.1.0"
-description = "Flags algorithmic inefficiency of AI-written Python at write time"
+description = "Flags algorithmic inefficiency of AI-written code at write time"
 requires-python = ">=3.11"
 dependencies = []
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]
+# Optional: enables structural checks for non-Python languages via tree-sitter.
+# Without it, the plugin still works fully for Python and silently skips others.
+multilang = ["tree-sitter>=0.25", "tree-sitter-language-pack>=1.0"]
 
 [project.scripts]
 complexity-guard = "complexity_guard.cli:main"

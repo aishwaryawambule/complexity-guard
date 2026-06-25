@@ -1,9 +1,8 @@
 import ast
-from complexity_guard import astutils as A
 from complexity_guard.detectors.recursion import detect_recursion_no_memo
 
 def _tree(src):
-    t = ast.parse(src); A.annotate_parents(t); return t
+    return ast.parse(src)
 
 BAD = """
 def fib(n):

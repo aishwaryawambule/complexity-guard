@@ -1,9 +1,8 @@
 import ast
-from complexity_guard import astutils as A
 from complexity_guard.detectors.nested_loop import detect_nested_loop
 
 def _tree(src):
-    t = ast.parse(src); A.annotate_parents(t); return t
+    return ast.parse(src)
 
 BAD = """
 def dupes(items):
@@ -42,3 +41,30 @@ def fn():
 
 def test_constant_tuple_nested_loop_not_flagged():
     assert detect_nested_loop(_tree(CONST_TUPLE)) == []
+
+# Inner loop over an adjacency list (`graph[u]`) -> amortized linear, not O(n^2).
+ADJACENCY = """
+def bfs(graph, start):
+    seen = set()
+    queue = [start]
+    while queue:
+        u = queue.pop()
+        for v in graph[u]:
+            if v not in seen:
+                seen.add(v)
+                queue.append(v)
+"""
+
+def test_adjacency_traversal_not_flagged():
+    assert detect_nested_loop(_tree(ADJACENCY)) == []
+
+# `graph[u] or []` (default-empty guard) is still a partition traversal.
+ADJACENCY_OR = """
+def walk(graph, start):
+    for u in graph:
+        for v in graph[u] or []:
+            use(u, v)
+"""
+
+def test_partition_with_or_default_not_flagged():
+    assert detect_nested_loop(_tree(ADJACENCY_OR)) == []

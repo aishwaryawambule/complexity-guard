@@ -1,13 +1,44 @@
 #!/usr/bin/env python3
-"""Claude Code PostToolUse hook: advisory algorithmic-complexity notes for written Python."""
+"""Claude Code PostToolUse hook: advisory algorithmic-complexity notes for written code.
+
+Python gets the full native-ast analysis; other languages get structural + (high
+confidence) semantic checks via tree-sitter when that optional dependency is
+installed — otherwise non-Python edits are skipped (with a one-time install hint).
+Project settings come from `.complexity-guard.toml` / pyproject `[tool.complexity-guard]`.
+"""
 import json
+import os
 import sys
+import tempfile
 from collections import Counter
 
 try:
-    from complexity_guard.analyze import analyze
+    from complexity_guard.analyze import analyze_lang
+    from complexity_guard.langspec import lang_for_path
+    from complexity_guard.config import load_config
+    from complexity_guard.tsadapter import TS_AVAILABLE
 except Exception:
-    analyze = None
+    analyze_lang = None
+    lang_for_path = None
+    load_config = None
+    TS_AVAILABLE = False
+
+
+def _ts_hint_once() -> str:
+    """Show the 'install tree-sitter' hint at most once per machine."""
+    marker = os.path.join(tempfile.gettempdir(), "complexity-guard-tshint")
+    try:
+        if os.path.exists(marker):
+            return ""
+        open(marker, "w").close()
+    except OSError:
+        pass
+    return (
+        "ℹ️ Complexity Guard: multi-language analysis is inactive — tree-sitter "
+        "isn't installed in this Python.\n"
+        "   Enable it with:  pip install tree-sitter tree-sitter-language-pack\n"
+        "   (Python files are still analyzed.)"
+    )
 
 
 def _finding_key(f):
@@ -30,8 +61,8 @@ def _reconstruct_old(payload, source):
     return None
 
 
-def _net_new(old_source, findings):
-    old_counts = Counter(_finding_key(f) for f in analyze(old_source))
+def _net_new(old_source, findings, lang, config):
+    old_counts = Counter(_finding_key(f) for f in analyze_lang(old_source, lang, config))
     kept = []
     for f in findings:
         k = _finding_key(f)
@@ -66,23 +97,34 @@ def _edit_ranges(payload, source):
 
 
 def run(payload: dict) -> str:
-    if analyze is None:
+    if analyze_lang is None:
         return ""
     path = (payload.get("tool_input") or {}).get("file_path", "")
-    if not path.endswith(".py"):
+    lang = lang_for_path(path)
+    if lang is None:
         return ""
+    config = load_config(path)
+    if config.excludes(path) or not config.allows_language(lang):
+        return ""
+    # Supported non-Python file but tree-sitter isn't installed: nudge once, then
+    # stay quiet (Python needs no extra dependency, so it's never affected).
+    if lang != "python" and not TS_AVAILABLE:
+        return _ts_hint_once()
     try:
         source = open(path, encoding="utf-8").read()
     except OSError:
         return ""
-    findings = analyze(source)
-    old = _reconstruct_old(payload, source)
-    if old is not None:
-        findings = _net_new(old, findings)
-    else:
-        ranges = _edit_ranges(payload, source)
-        if ranges:
-            findings = [f for f in findings if any(lo <= f.lineno <= hi for lo, hi in ranges)]
+    findings = analyze_lang(source, lang, config)
+    # Nothing flagged in the new source -> no need to reconstruct/re-analyze the
+    # old source (the net-new / range filters can only ever shrink this list).
+    if findings:
+        old = _reconstruct_old(payload, source)
+        if old is not None:
+            findings = _net_new(old, findings, lang, config)
+        else:
+            ranges = _edit_ranges(payload, source)
+            if ranges:
+                findings = [f for f in findings if any(lo <= f.lineno <= hi for lo, hi in ranges)]
     findings = _dedup(findings)
     if not findings:
         return ""

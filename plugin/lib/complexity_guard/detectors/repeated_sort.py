@@ -1,12 +1,12 @@
 import ast
 from ..models import Finding
-from ..astutils import loop_depth, enclosing_function_name
+from ..astutils import index_tree, loop_depth, enclosing_function_name
 
 
-def detect_repeated_sort_in_loop(tree: ast.Module) -> list[Finding]:
+def _detect_repeated_sort_in_loop(idx) -> list[Finding]:
     findings = []
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Call) and loop_depth(node) >= 1:
+    for node in idx.calls:
+        if loop_depth(node) >= 1:
             f = node.func
             is_sort = (isinstance(f, ast.Name) and f.id == "sorted") or (
                 isinstance(f, ast.Attribute) and f.attr == "sort")
@@ -20,3 +20,7 @@ def detect_repeated_sort_in_loop(tree: ast.Module) -> list[Finding]:
                     function=enclosing_function_name(node),
                 ))
     return findings
+
+
+def detect_repeated_sort_in_loop(tree: ast.Module) -> list[Finding]:
+    return _detect_repeated_sort_in_loop(index_tree(tree))
