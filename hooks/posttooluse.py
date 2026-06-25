@@ -2,11 +2,49 @@
 """Claude Code PostToolUse hook: advisory algorithmic-complexity notes for written Python."""
 import json
 import sys
+from collections import Counter
 
 try:
     from complexity_guard.analyze import analyze
 except Exception:
     analyze = None
+
+
+def _finding_key(f):
+    return (f.detector, f.function, f.complexity, f.message)
+
+
+def _reconstruct_old(payload, source):
+    ti = payload.get("tool_input") or {}
+    if isinstance(ti.get("edits"), list):
+        old = source
+        for e in reversed(ti["edits"]):
+            ns, os_ = e.get("new_string"), e.get("old_string")
+            if ns is not None and os_ is not None:
+                old = old.replace(ns, os_, 1)
+        return old if old != source else None
+    ns, os_ = ti.get("new_string"), ti.get("old_string")
+    if ns is not None and os_ is not None:
+        old = source.replace(ns, os_, 1)
+        return old if old != source else None
+    return None
+
+
+def _net_new(old_source, findings):
+    old_counts = Counter(_finding_key(f) for f in analyze(old_source))
+    kept = []
+    for f in findings:
+        k = _finding_key(f)
+        if old_counts.get(k, 0) > 0:
+            old_counts[k] -= 1
+        else:
+            kept.append(f)
+    return kept
+
+
+def _dedup(findings):
+    bigo_funcs = {f.function for f in findings if f.detector == "bigo"}
+    return [f for f in findings if not (f.detector == "nested-loop" and f.function in bigo_funcs)]
 
 
 def _edit_ranges(payload, source):
@@ -38,9 +76,14 @@ def run(payload: dict) -> str:
     except OSError:
         return ""
     findings = analyze(source)
-    ranges = _edit_ranges(payload, source)
-    if ranges:
-        findings = [f for f in findings if any(lo <= f.lineno <= hi for lo, hi in ranges)]
+    old = _reconstruct_old(payload, source)
+    if old is not None:
+        findings = _net_new(old, findings)
+    else:
+        ranges = _edit_ranges(payload, source)
+        if ranges:
+            findings = [f for f in findings if any(lo <= f.lineno <= hi for lo, hi in ranges)]
+    findings = _dedup(findings)
     if not findings:
         return ""
     lines = ["⚠️ Complexity Guard:"]
