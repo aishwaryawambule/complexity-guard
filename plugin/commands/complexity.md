@@ -3,6 +3,7 @@ description: Analyze a Python file's algorithmic complexity (Big-O smells + LLM 
 argument-hint: <path/to/file.py>
 ---
 
-Run `complexity-guard $ARGUMENTS` and summarize the findings for me — group by
-function, and for each smell give the line, the estimated complexity, and the
-suggested fix.
+Run the bundled analyzer and summarize the findings — group by function, and for
+each smell give the line, the estimated complexity, and the suggested fix:
+
+!`PYTHONPATH="${CLAUDE_PLUGIN_ROOT}/lib" python3 -m complexity_guard.cli $ARGUMENTS`

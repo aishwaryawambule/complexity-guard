@@ -1,0 +1,11 @@
+{
+  "name": "complexity-guard-marketplace",
+  "owner": { "name": "aishwaryawambule" },
+  "plugins": [
+    {
+      "name": "complexity-guard",
+      "source": "./plugin",
+      "description": "Flags algorithmic (Big-O) complexity smells in Python at write time — advisory, edit-aware, low false-positive."
+    }
+  ]
+}

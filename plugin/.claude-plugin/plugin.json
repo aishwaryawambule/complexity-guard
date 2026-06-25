@@ -1,5 +1,10 @@
 {
   "name": "complexity-guard",
+  "displayName": "Complexity Guard",
   "version": "0.1.0",
-  "description": "Flags algorithmic (Big-O) inefficiency of written Python at write time."
+  "description": "Flags algorithmic (Big-O) complexity smells in Python at write time — advisory, edit-aware, and low false-positive.",
+  "author": { "name": "aishwaryawambule" },
+  "license": "MIT",
+  "repository": "https://github.com/aishwaryawambule/complexity-guard",
+  "homepage": "https://github.com/aishwaryawambule/complexity-guard#readme"
 }
