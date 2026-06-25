@@ -30,3 +30,22 @@ def test_flags_loop_invariant_call():
 
 def test_call_using_loop_var_not_flagged():
     assert detect_loop_invariant_call(_tree(CLEAN)) == []
+
+BARE_SIDE_EFFECT = """
+def run(items):
+    for x in items:
+        emit()
+"""
+
+def test_bare_side_effect_call_not_flagged():
+    assert detect_loop_invariant_call(_tree(BARE_SIDE_EFFECT)) == []
+
+USES_BODY_ASSIGNED = """
+def run(items):
+    for x in items:
+        val = transform(x)
+        out = process(val)
+"""
+
+def test_call_uses_body_assigned_name_not_flagged():
+    assert detect_loop_invariant_call(_tree(USES_BODY_ASSIGNED)) == []

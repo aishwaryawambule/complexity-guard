@@ -40,3 +40,25 @@ def enclosing_function_name(node: ast.AST):
 
 def iter_functions(tree: ast.AST) -> list[ast.AST]:
     return [n for n in ast.walk(tree) if isinstance(n, FUNC_TYPES)]
+
+
+def is_within(node, ancestor):
+    cur = node
+    while cur is not None:
+        if cur is ancestor:
+            return True
+        cur = getattr(cur, "parent", None)
+    return False
+
+
+def is_scaling_loop(node):
+    if isinstance(node, ast.While):
+        return True
+    it = node.iter
+    if isinstance(it, (ast.List, ast.Tuple, ast.Set, ast.Dict)):
+        return False
+    if (isinstance(it, ast.Call) and isinstance(it.func, ast.Name) and it.func.id == "range"
+            and not it.keywords
+            and all(isinstance(a, ast.Constant) and isinstance(a.value, int) for a in it.args)):
+        return False
+    return True

@@ -43,3 +43,13 @@ def test_nested_function_depth_not_counted_in_outer():
     assert len(f) == 1
     assert f[0].function == "inner"
     assert f[0].complexity == "O(n^2)"
+
+CONST_TUPLE_DOUBLE = """
+def fn():
+    for a in (1, 2):
+        for b in (3, 4):
+            pass
+"""
+
+def test_constant_tuple_double_nest_not_flagged():
+    assert detect_bigo(_tree(CONST_TUPLE_DOUBLE)) == []

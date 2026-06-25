@@ -32,3 +32,13 @@ def test_flags_nested_loop():
 
 def test_clean_single_loop_not_flagged():
     assert detect_nested_loop(_tree(CLEAN)) == []
+
+CONST_TUPLE = """
+def fn():
+    for a in (1, 2):
+        for b in (3, 4):
+            pass
+"""
+
+def test_constant_tuple_nested_loop_not_flagged():
+    assert detect_nested_loop(_tree(CONST_TUPLE)) == []
