@@ -23,6 +23,10 @@ def detect_loop_invariant_call(tree: ast.Module) -> list[Finding]:
                     loop_vars |= _target_names(lp.target)
             if not loop_vars:
                 continue
+            # (d) skip dynamic dispatch: the called function is itself a loop
+            # variable, so it differs each iteration and is NOT loop-invariant.
+            if node.func.id in loop_vars:
+                continue
             used = _names_used(node) - {node.func.id}
             # (a) skip if this call is part of the loop's own iterator expression
             if isinstance(inner, ast.For) and is_within(node, inner.iter):

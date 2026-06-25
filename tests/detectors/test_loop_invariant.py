@@ -49,3 +49,16 @@ def run(items):
 
 def test_call_uses_body_assigned_name_not_flagged():
     assert detect_loop_invariant_call(_tree(USES_BODY_ASSIGNED)) == []
+
+DYNAMIC_DISPATCH = """
+def apply_all(fns, x):
+    out = []
+    for fn in fns:
+        out.append(fn(x))
+    return out
+"""
+
+def test_dynamic_dispatch_not_flagged():
+    # The callee `fn` is itself the loop variable, so it differs each
+    # iteration — not loop-invariant.
+    assert detect_loop_invariant_call(_tree(DYNAMIC_DISPATCH)) == []
