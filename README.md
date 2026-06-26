@@ -29,12 +29,20 @@ dependency is installed.
    python3 -m venv ~/.complexity-guard-venv
    ~/.complexity-guard-venv/bin/pip install tree-sitter tree-sitter-language-pack
    ```
-   Then pin the hook to that interpreter so it's used regardless of what's on
-   `PATH`, via Claude Code's settings `env` (so the hook subprocess always sees it):
+   Then pin that interpreter so it's used regardless of what's on `PATH`, via
+   Claude Code's settings `env` (so the hook subprocess always sees it):
    ```json
-   // ~/.claude/settings.json
-   "env": { "COMPLEXITY_GUARD_PYTHON": "/Users/<you>/.complexity-guard-venv/bin/python3" }
+   // ~/.claude/settings.json — the python3.14 below MUST match your venv's version
+   "env": { "COMPLEXITY_GUARD_PYTHON": "/Users/<you>/.complexity-guard-venv/bin/python3.14" }
    ```
+   That trailing `python3.14` is **not** a leave-as-is placeholder — it must be the
+   exact version your venv was built with (`python3.12`, `python3.13`, …), or the
+   path won't exist and the interpreter won't launch. Check the real name with
+   `ls ~/.complexity-guard-venv/bin/python*`. (Inside a venv, `python`, `python3`,
+   and `python3.<minor>` all point to the *same* interpreter, so any works — but the
+   version-specific name is the most explicit and least surprising.) This one
+   variable drives **both** the auto-hook **and** the `/complexity` command — set it once.
+
    Quick alternative (installs into the system `python3` the hook already uses,
    at the cost of polluting it): `pip install --break-system-packages tree-sitter tree-sitter-language-pack`.
 
@@ -73,8 +81,10 @@ venv. A venv only matters if it's the interpreter the hook ends up running:
   `python3`, and tree-sitter must be installed there instead (or blocked by
   PEP 668 — see [Install](#install)).
 - To remove the ambiguity entirely, set `COMPLEXITY_GUARD_PYTHON` to an absolute
-  interpreter path (ideally via Claude Code's settings `env`). The hook then uses
-  it no matter what's on `PATH` — the recommended setup.
+  interpreter path — ideally the version-specific binary from your venv, e.g.
+  `~/.complexity-guard-venv/bin/python3.14` — via Claude Code's settings `env`.
+  Both the hook **and** the `/complexity` command then use it no matter what's on
+  `PATH`. This is the recommended setup.
 
 `COMPLEXITY_GUARD_PYTHON` is also the fix when the resolved `python3` is older
 than 3.11: point it at a 3.11+ interpreter.
