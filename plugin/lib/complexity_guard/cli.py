@@ -14,6 +14,8 @@ import sys
 from dataclasses import asdict
 from pathlib import Path
 
+from . import __version__
+
 
 def _reexec_under_override() -> None:
     """Re-run under ``$COMPLEXITY_GUARD_PYTHON`` when it names a different interpreter.
@@ -37,12 +39,20 @@ def _reexec_under_override() -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    from .analyze import analyze_path  # deferred — see module note above
-
     parser = argparse.ArgumentParser(prog="complexity-guard")
     parser.add_argument("file")
     parser.add_argument("--json", action="store_true")
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"complexity-guard {__version__}",
+    )
     args = parser.parse_args(argv)
+
+    # Deferred — see module note above. Kept *after* parse_args so `--version`
+    # (and `--help`) resolve without importing the analyzer, which needs 3.10+
+    # syntax and tree-sitter; --version must work under a bare python3.
+    from .analyze import analyze_path
 
     # Accept editor-style "@path" file mentions (e.g. from a slash command's
     # $ARGUMENTS) by treating a leading "@" as sugar for the bare path.

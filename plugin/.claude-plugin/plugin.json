@@ -1,7 +1,7 @@
 {
   "name": "complexity-guard",
   "displayName": "Complexity Guard",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Flags algorithmic (Big-O) complexity smells across many languages at write time \u2014 advisory, edit-aware, and low false-positive.",
   "author": {
     "name": "aishwaryawambule"
