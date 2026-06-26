@@ -8,7 +8,10 @@ LOOP_TYPES = (ast.For, ast.While)
 def _detect_nested_loop(idx) -> list[Finding]:
     findings = []
     for node in idx.loops:
-        if is_scaling_loop(node) and getattr(node, "_has_sloop_anc", False):
+        # Only a loop nested inside another loop over the SAME dimension is a real
+        # quadratic; independent dimensions (an iteration cap x a collection x a
+        # feature width) are a product O(a*b), not O(n^2).
+        if is_scaling_loop(node) and getattr(node, "_has_samedim_anc", False):
             findings.append(Finding(
                 detector="nested-loop",
                 lineno=node.lineno,

@@ -68,3 +68,15 @@ def walk(graph, start):
 
 def test_partition_with_or_default_not_flagged():
     assert detect_nested_loop(_tree(ADJACENCY_OR)) == []
+
+# Inner loop ranges over an *independent* dimension (a per-row width), not the
+# outer collection -> O(rows*width), not O(n^2). Must NOT be flagged.
+INDEPENDENT_DIMS = """
+def fit(points, dim):
+    for p in points:
+        for d in range(dim):
+            work(p, d)
+"""
+
+def test_independent_dimensions_not_flagged():
+    assert detect_nested_loop(_tree(INDEPENDENT_DIMS)) == []

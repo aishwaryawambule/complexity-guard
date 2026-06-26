@@ -22,6 +22,21 @@ from .langspec import (
     VARDECL_TYPES, SET_TYPE_HINTS, LIST_TYPE_HINTS, SUBSCRIPT_TYPES,
 )
 
+# Loop types that re-check a condition rather than iterate a binding (while / until
+# / do-while). They contribute a count, but their size identifiers live in the
+# condition, not in an iterable.
+_WHILE_TYPES = frozenset({
+    "while_statement", "while_expression", "while", "do_statement",
+    "until", "repeat_statement",
+})
+# Property / index access whose *base* (not the `.prop` / `[idx]`) is the real
+# dimension: `points.length` -> points, `xs.size()` -> xs.
+_PROP_BASE_TYPES = (
+    MEMBER_TYPES | SUBSCRIPT_TYPES | frozenset({"field_access", "field_expression"})
+)
+# Wrappers that aren't themselves a dimension (a size accessor around the real one).
+_NONDIM_NAMES = frozenset({"len", "range", "Math", "Number", "Array", "size", "length"})
+
 try:
     from tree_sitter import Parser
     from tree_sitter_language_pack import get_language
@@ -43,6 +58,7 @@ class NNode:
     __slots__ = (
         "kind", "lineno", "name",
         "_scaling", "_func", "_has_sloop_anc", "_sdepth", "decorator_list",
+        "_dim", "_dim_depth", "_has_samedim_anc",
     )
 
     def __init__(self, kind: str, lineno: int, name: str | None = None):
@@ -54,6 +70,9 @@ class NNode:
         self._has_sloop_anc = False   # a scaling loop encloses this loop
         self._sdepth = 0              # scaling-loop nesting depth incl. self, within func
         self.decorator_list = []      # no portable memo-decorator concept; always empty
+        self._dim = None              # this loop's dimension id
+        self._dim_depth = 0           # same-dimension nesting depth incl. self, within func
+        self._has_samedim_anc = False  # a SAME-dimension scaling loop encloses this loop
 
 
 class NormalizedIndex:
@@ -223,6 +242,92 @@ def _iterates_partition(node, src: bytes) -> bool:
     return False
 
 
+def _base_idents(node, src: bytes) -> set:
+    """Identifiers a size expression depends on, reducing `a.b` / `a[i]` / `a.b()`
+    to their base `a` (the dimension), so `points.length` yields {points}."""
+    out = set()
+    if node is None:
+        return out
+    stack = [node]
+    seen = 0
+    while stack and seen < 256:
+        cur = stack.pop()
+        seen += 1
+        if cur.type in _PROP_BASE_TYPES:
+            base = None
+            for field in ("object", "operand", "argument", "value", "array", "receiver"):
+                base = cur.child_by_field_name(field)
+                if base is not None:
+                    break
+            if base is None:
+                named = [c for c in cur.children if c.is_named]
+                base = named[0] if named else None
+            if base is not None:
+                stack.append(base)
+            continue
+        if _is_ident_leaf(cur):
+            out.add(_text(cur, src))
+            continue
+        stack.extend(c for c in cur.children if c.is_named)
+    return out
+
+
+def _loop_dims(node, src: bytes):
+    """(loopvars, idset) for a scaling loop: its iteration variable name(s) and the
+    base identifiers its iteration count depends on (builtins / own vars removed)."""
+    rc = next((c for c in node.children if c.type == "range_clause"), None)
+
+    # C-style counting for (no range_clause): vars from the init, size from the cond.
+    if node.type in COUNTING_FOR_TYPES and rc is None:
+        loopvars = set()
+        init = node.child_by_field_name("initializer") or node.child_by_field_name("init")
+        cond = node.child_by_field_name("condition")
+        if cond is None:
+            fc = next((c for c in node.children if c.type == "for_clause"), None)
+            if fc is not None:
+                init = init or fc.child_by_field_name("initializer") or fc.child_by_field_name("init")
+                cond = fc.child_by_field_name("condition")
+        if init is not None:
+            lid = _first_ident(init)
+            if lid is not None:
+                loopvars.add(_text(lid, src))
+        ids = _base_idents(cond, src)
+        return frozenset(loopvars), frozenset(ids - loopvars - _NONDIM_NAMES)
+
+    # while / until / do-while: size identifiers live in the re-checked condition.
+    if node.type in _WHILE_TYPES:
+        cond = node.child_by_field_name("condition")
+        ids = _base_idents(cond if cond is not None else node, src)
+        return frozenset(), frozenset(ids - _NONDIM_NAMES)
+
+    # foreach / for-of / for-in / go range / rust for: a binding over an iterable.
+    loopvars = set()
+    left = (node.child_by_field_name("left") or node.child_by_field_name("pattern")
+            or node.child_by_field_name("name"))
+    if left is None and rc is not None:
+        left = rc.child_by_field_name("left")
+    if left is not None:
+        if _is_ident_leaf(left):
+            loopvars.add(_text(left, src))
+        else:
+            for c in left.children:
+                if _is_ident_leaf(c):
+                    loopvars.add(_text(c, src))
+    it = _loop_iterable(node)
+    ids = _base_idents(it, src)
+    return frozenset(loopvars), frozenset(ids - loopvars - _NONDIM_NAMES)
+
+
+def _assign_dim(loopvars, idset, enclosing, fresh):
+    """Dimension id for a loop: reuse an enclosing scaling loop's dimension when
+    their identifier sets intersect (or one references the other's loop variable),
+    else a fresh id. ``enclosing`` is (loopvars, idset, dim) tuples, outermost-first."""
+    for lv, ids, dim in reversed(enclosing):
+        if (idset & ids) or (lv & idset) or (loopvars & ids):
+            return dim
+    return fresh
+
+
 def _last_ident(node, src: bytes) -> str | None:
     """The last identifier-like leaf under ``node`` (a call's method/function name)."""
     found = None
@@ -368,15 +473,16 @@ def build_index(source: str, lang: str):
         return None
 
     idx = NormalizedIndex()
-    # DFS carrying: enclosing-function chain, global *scaling*-loop depth, and
-    # scaling-loop depth within the current function. Only scaling loops increment
-    # these (constant-bounded loops don't), mirroring astutils.index_tree. Global
-    # depth is NOT reset at function boundaries (nested-loop's "has scaling
-    # ancestor"); the per-function depth IS reset (bigo's per-function nesting).
-    stack = [(tree.root_node, (), 0, 0)]
+    # DFS carrying: enclosing-function chain, global *scaling*-loop depth,
+    # scaling-loop depth within the current function, and the enclosing scaling
+    # loops' (loopvars, idset, dim) for dimension tracking. Only scaling loops
+    # increment these (constant-bounded loops don't), mirroring astutils.index_tree.
+    # Global depth is NOT reset at function boundaries (nested-loop's "has scaling
+    # ancestor"); per-function depth and the dimension chain ARE reset.
+    stack = [(tree.root_node, (), 0, 0, ())]
     while stack:
-        node, fchain, sg, sf = stack.pop()
-        nfchain, nsg, nsf = fchain, sg, sf
+        node, fchain, sg, sf, sloops = stack.pop()
+        nfchain, nsg, nsf, nsloops = fchain, sg, sf, sloops
 
         if node.is_named:
             t = node.type
@@ -386,6 +492,7 @@ def build_index(source: str, lang: str):
                 idx.self_calls.setdefault(fn, 0)
                 nfchain = fchain + (fn,)
                 nsf = 0
+                nsloops = ()
             elif t in LOOP_TYPES:
                 scaling = _loop_is_scaling(node)
                 # Inner `for v of graph[u]` traverses one partition per outer step:
@@ -400,8 +507,17 @@ def build_index(source: str, lang: str):
                 lp._sdepth = sf + (1 if scaling else 0)
                 idx.loops.append(lp)
                 if scaling:
+                    # A loop only deepens O(n^k) when its dimension repeats one
+                    # already enclosing it; independent sizes are a product.
+                    lv, ids = _loop_dims(node, src)
+                    fresh = (node.start_point[0], node.start_point[1])
+                    dim = _assign_dim(lv, ids, sloops, fresh)
+                    lp._dim = dim
+                    lp._dim_depth = 1 + sum(1 for _, _, d in sloops if d == dim)
+                    lp._has_samedim_anc = lp._dim_depth >= 2
                     nsg = sg + 1
                     nsf = sf + 1
+                    nsloops = sloops + ((lv, ids, dim),)
             elif t in CALL_TYPES:
                 name = _self_call_name(node, src)
                 if name is not None:
@@ -426,6 +542,6 @@ def build_index(source: str, lang: str):
                 idx.memoized.add(fchain[-1])
 
         for child in node.children:
-            stack.append((child, nfchain, nsg, nsf))
+            stack.append((child, nfchain, nsg, nsf, nsloops))
 
     return idx

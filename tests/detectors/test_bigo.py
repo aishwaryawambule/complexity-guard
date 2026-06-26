@@ -82,3 +82,29 @@ def f(arr):
 def test_slice_iteration_still_flagged():
     f = detect_bigo(_tree(TRIANGULAR))
     assert len(f) == 1 and f[0].complexity == "O(n^2)"
+
+# Loops over *independent* sizes (iterations cap x points x dimensions) are a
+# product O(a*b*c), not a power O(n^3): a polynomial blow-up needs the SAME
+# dimension to repeat. Must NOT be flagged.
+INDEPENDENT_DIMS = """
+def fit(points, iters, dim):
+    for _ in range(iters):
+        for p in points:
+            for d in range(dim):
+                work(p, d)
+"""
+
+def test_independent_dimensions_not_flagged():
+    assert detect_bigo(_tree(INDEPENDENT_DIMS)) == []
+
+# Same scalar dimension repeated IS a real quadratic.
+SAME_SCALAR = """
+def f(n):
+    for i in range(n):
+        for j in range(n):
+            use(i, j)
+"""
+
+def test_same_scalar_dimension_still_flagged():
+    f = detect_bigo(_tree(SAME_SCALAR))
+    assert len(f) == 1 and f[0].complexity == "O(n^2)"
