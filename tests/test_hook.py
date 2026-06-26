@@ -24,6 +24,19 @@ def test_hook_handles_missing_file():
     mod = _load()
     assert mod.run({"tool_input": {"file_path": "/nope/x.py"}}) == ""
 
+
+def test_load_failure_emits_one_time_hint(tmp_path, monkeypatch):
+    """If the analyzer can't be imported (e.g. the hook's python3 is < 3.11), the
+    hook surfaces a one-time hint instead of silently doing nothing forever."""
+    mod = _load()
+    monkeypatch.setattr(mod, "analyze_lang", None)  # simulate failed import
+    monkeypatch.setattr(mod.tempfile, "gettempdir", lambda: str(tmp_path))
+    out = mod.run({"tool_input": {"file_path": str(tmp_path / "x.py")}})
+    assert "3.11" in out                       # tells the user the requirement
+    assert "COMPLEXITY_GUARD_PYTHON" in out     # and how to point at a good interpreter
+    # one-time: a subsequent call stays quiet rather than nagging on every edit
+    assert mod.run({"tool_input": {"file_path": str(tmp_path / "y.py")}}) == ""
+
 def test_net_new_reports_introduced_problems(tmp_path):
     """Net-new: a change that ADDS a nested loop must be reported."""
     clean = "def foo(items):\n    return list(items)\n"

@@ -24,20 +24,45 @@ except Exception:
     TS_AVAILABLE = False
 
 
-def _ts_hint_once() -> str:
-    """Show the 'install tree-sitter' hint at most once per machine."""
-    marker = os.path.join(tempfile.gettempdir(), "complexity-guard-tshint")
+def _hint_once(marker_name: str, message: str) -> str:
+    """Return ``message`` the first time it's asked for, then "" thereafter.
+
+    Dedup is via a marker file in the temp dir, so a given hint surfaces about
+    once per machine rather than on every edit.
+    """
+    marker = os.path.join(tempfile.gettempdir(), marker_name)
     try:
         if os.path.exists(marker):
             return ""
         open(marker, "w").close()
     except OSError:
         pass
-    return (
+    return message
+
+
+def _ts_hint_once() -> str:
+    """Show the 'install tree-sitter' hint at most once per machine."""
+    return _hint_once(
+        "complexity-guard-tshint",
         "ℹ️ Complexity Guard: multi-language analysis is inactive — tree-sitter "
         "isn't installed in this Python.\n"
         "   Enable it with:  pip install tree-sitter tree-sitter-language-pack\n"
-        "   (Python files are still analyzed.)"
+        "   (Python files are still analyzed.)",
+    )
+
+
+def _load_hint_once() -> str:
+    """Shown when the analyzer package can't be imported — almost always because
+    the hook's ``python3`` is older than 3.11. Surfaced once so the plugin doesn't
+    fail completely silently on an incompatible interpreter."""
+    return _hint_once(
+        "complexity-guard-loadhint",
+        "ℹ️ Complexity Guard: couldn't load its analyzer with this python3 — it "
+        "needs Python 3.11+.\n"
+        "   The hook runs the `python3` on your PATH; point it at a suitable one "
+        "with:\n"
+        "   export COMPLEXITY_GUARD_PYTHON=/path/to/python   (3.11+)\n"
+        "   (Until then nothing is analyzed, including Python.)",
     )
 
 
@@ -98,7 +123,7 @@ def _edit_ranges(payload, source):
 
 def run(payload: dict) -> str:
     if analyze_lang is None:
-        return ""
+        return _load_hint_once()
     path = (payload.get("tool_input") or {}).get("file_path", "")
     lang = lang_for_path(path)
     if lang is None:
