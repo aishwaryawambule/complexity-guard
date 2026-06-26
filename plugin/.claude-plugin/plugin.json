@@ -1,9 +1,11 @@
 {
   "name": "complexity-guard",
   "displayName": "Complexity Guard",
-  "version": "0.1.1",
-  "description": "Flags algorithmic (Big-O) complexity smells across many languages at write time — advisory, edit-aware, and low false-positive.",
-  "author": { "name": "aishwaryawambule" },
+  "version": "0.1.2",
+  "description": "Flags algorithmic (Big-O) complexity smells across many languages at write time \u2014 advisory, edit-aware, and low false-positive.",
+  "author": {
+    "name": "aishwaryawambule"
+  },
   "license": "MIT",
   "repository": "https://github.com/aishwaryawambule/complexity-guard",
   "homepage": "https://github.com/aishwaryawambule/complexity-guard#readme"

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "complexity-guard"
-version = "0.1.1"
+version = "0.1.2"
 description = "Flags algorithmic inefficiency of AI-written code at write time"
 requires-python = ">=3.11"
 dependencies = []
@@ -24,3 +24,7 @@ where = ["src"]
 [tool.pytest.ini_options]
 addopts = "-q"
 testpaths = ["tests"]
+# Put the package on sys.path for the test session so the suite doesn't depend on
+# an editable install being present/working (it can silently break across Python
+# upgrades). The CLI/hook already run with PYTHONPATH set; this keeps tests aligned.
+pythonpath = ["src"]

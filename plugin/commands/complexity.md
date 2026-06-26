@@ -1,6 +1,7 @@
 ---
 description: Analyze a file's algorithmic complexity (Big-O smells + LLM anti-patterns)
 argument-hint: <path/to/file>
+allowed-tools: Bash(PYTHONPATH=* python3 -m complexity_guard.cli *)
 ---
 
 Run the bundled analyzer and summarize the findings — group by function, and for
