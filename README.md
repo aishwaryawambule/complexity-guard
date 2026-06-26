@@ -20,15 +20,28 @@ dependency is installed.
    ```
 2. **Python is ready immediately** — the only requirement is Python 3.11+ available
    as `python3` (that's what the hook runs). No extra dependencies.
-3. **To check other languages too**, install tree-sitter into that same `python3`:
+3. **To check other languages too**, make tree-sitter importable from the
+   `python3` the hook runs. On most modern systems `pip install` into the
+   system interpreter is blocked by [PEP 668](https://peps.python.org/pep-0668/)
+   (`externally-managed-environment` — pip tells you to use a venv), so the
+   reliable approach is a dedicated venv that you point the hook at:
    ```bash
-   pip install tree-sitter tree-sitter-language-pack
+   python3 -m venv ~/.complexity-guard-venv
+   ~/.complexity-guard-venv/bin/pip install tree-sitter tree-sitter-language-pack
    ```
-   That's the one and only thing a user does for multi-language support. Without
-   it, Python is still analyzed and you get a one-time install hint on your first
-   non-Python edit — nothing breaks. See
-   [Multi-language support](#multi-language-support-tree-sitter) for which
-   interpreter "that same `python3`" means.
+   Then pin the hook to that interpreter so it's used regardless of what's on
+   `PATH`, via Claude Code's settings `env` (so the hook subprocess always sees it):
+   ```json
+   // ~/.claude/settings.json
+   "env": { "COMPLEXITY_GUARD_PYTHON": "/Users/<you>/.complexity-guard-venv/bin/python3" }
+   ```
+   Quick alternative (installs into the system `python3` the hook already uses,
+   at the cost of polluting it): `pip install --break-system-packages tree-sitter tree-sitter-language-pack`.
+
+   Either way, Python is analyzed with no extra setup; without tree-sitter you
+   just get a one-time install hint on your first non-Python edit — nothing
+   breaks. See [Which `python3` runs the hook](#which-python3-runs-the-hook) for
+   exactly which interpreter "that same `python3`" means.
 
 ### For local development
 
@@ -40,6 +53,31 @@ dependency is installed.
   supported file. Python is always covered; other languages are covered when
   `tree-sitter` is installed in the Python that runs the hook.
 - On demand: `/complexity path/to/file`, or `complexity-guard path/to/file [--json]`.
+
+## Which `python3` runs the hook
+
+The hook never activates a virtualenv itself — it picks an interpreter at run
+time (see [`cc_hook.sh`](plugin/hooks/cc_hook.sh)):
+
+1. `$COMPLEXITY_GUARD_PYTHON` if set, else
+2. the first `python3` on `PATH`, else
+3. `python`.
+
+So "that same `python3`" means *whichever interpreter that resolution lands on
+in the environment Claude Code launches the hook in* — **not** necessarily a
+venv. A venv only matters if it's the interpreter the hook ends up running:
+
+- If you develop inside an **activated venv** and launch Claude Code from that
+  shell, `python3` resolves to the venv — so tree-sitter must live there.
+- If Claude Code runs **without** a venv active, the hook uses the **system**
+  `python3`, and tree-sitter must be installed there instead (or blocked by
+  PEP 668 — see [Install](#install)).
+- To remove the ambiguity entirely, set `COMPLEXITY_GUARD_PYTHON` to an absolute
+  interpreter path (ideally via Claude Code's settings `env`). The hook then uses
+  it no matter what's on `PATH` — the recommended setup.
+
+`COMPLEXITY_GUARD_PYTHON` is also the fix when the resolved `python3` is older
+than 3.11: point it at a 3.11+ interpreter.
 
 ## What it flags
 
