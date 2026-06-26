@@ -1,7 +1,7 @@
 {
   "name": "complexity-guard",
   "displayName": "Complexity Guard",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Flags algorithmic (Big-O) complexity smells across many languages at write time — advisory, edit-aware, and low false-positive.",
   "author": { "name": "aishwaryawambule" },
   "license": "MIT",

@@ -91,3 +91,19 @@ these defaults apply:
 
 Detector names: `bigo`, `nested-loop`, `recursion-no-memo`, `membership-in-loop`,
 `repeated-sort-in-loop`, `string-concat-in-loop`, `loop-invariant-call`.
+
+## Releasing
+
+Plugin installs are **keyed by version**, and Claude Code's background
+auto-update only pulls a new build when the version increases. Shipping changed
+code under the same version leaves already-installed users on stale code, so
+every change to the shipped tree needs a version bump — always cut releases with:
+
+```bash
+scripts/release.sh 0.1.2 --push
+```
+
+It bumps `plugin/.claude-plugin/plugin.json` and `pyproject.toml` together,
+re-bundles `plugin/`, runs the suite, commits, and tags `complexity-guard--v0.1.2`.
+`tests/test_version_guard.py` fails if `plugin/` changed since the latest release
+tag without a bump, so a forgotten version can't slip through CI.
