@@ -213,6 +213,54 @@ def test_dynamic_outer_constant_inner_is_linear():
     assert _detectors(analyze_ts(src, "javascript")) == set()
 
 
+# --- accuracy: independent dimensions are a product, not a power --------------
+
+# k-means-shaped: iteration cap x points x feature-dimensions. Each loop scales
+# with a DIFFERENT size, so this is O(iters * n * dim), not O(n^3). A polynomial
+# blow-up requires the SAME dimension to repeat in the nesting.
+KMEANS_SHAPED = """\
+function fit(points, opts) {
+  const dim = points[0].length;
+  for (let it = 0; it < opts.maxIters; it++) {
+    for (let i = 0; i < points.length; i++) {
+      for (let d = 0; d < dim; d++) {
+        work(points[i], d);
+      }
+    }
+  }
+}
+"""
+
+def test_independent_dimensions_not_flagged_ts():
+    dets = _detectors(analyze_ts(KMEANS_SHAPED, "javascript"))
+    assert "bigo" not in dets
+    assert "nested-loop" not in dets
+
+
+def test_two_distinct_collections_not_quadratic():
+    # O(a*b) over two independent collections is not O(n^2); the real "use a set"
+    # cases are caught by membership-in-loop, not by raw nesting.
+    src = "function f(a,b){for(const x of a){for(const y of b){use(x,y);}}}"
+    assert "bigo" not in _detectors(analyze_ts(src, "javascript"))
+
+
+def test_while_count_loop_over_collection_not_quadratic():
+    # `while (acc.length < k)` runs k times; the inner pass is over a different
+    # collection -> O(k*n), not O(n^2).
+    src = (
+        "function seed(points, k){"
+        "  const acc=[];"
+        "  while(acc.length < k){"
+        "    for(let i=0;i<points.length;i++){ consider(points[i]); }"
+        "    acc.push(pick());"
+        "  }"
+        "}"
+    )
+    dets = _detectors(analyze_ts(src, "javascript"))
+    assert "bigo" not in dets
+    assert "nested-loop" not in dets
+
+
 # --- accuracy: suggestions are language-appropriate, memoized recursion is OK --
 
 def test_recursion_suggestion_is_not_python_specific():

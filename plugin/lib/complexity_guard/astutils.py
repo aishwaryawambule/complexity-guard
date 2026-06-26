@@ -100,11 +100,50 @@ def iter_is_partition(it) -> bool:
     return False
 
 
+# --- loop "dimension" tracking ------------------------------------------------
+# A loop's dimension is the set of identifiers its iteration count depends on (the
+# container it walks, or its bound variable). Nesting only multiplies into O(n^k)
+# when the SAME dimension repeats; loops over independent sizes (an iteration cap
+# x a collection x a feature width) are a product O(a*b*c), not a power. Builtins
+# that wrap a size but aren't themselves a dimension are stripped.
+_NONDIM_NAMES = frozenset({
+    "range", "len", "enumerate", "zip", "reversed", "sorted",
+    "list", "set", "dict", "tuple", "min", "max",
+})
+
+
+def _names_under(node) -> set:
+    return {n.id for n in ast.walk(node) if isinstance(n, ast.Name)}
+
+
+def loop_dims(node):
+    """(loopvars, idset) for a scaling loop: its iteration variable name(s) and the
+    identifiers its size depends on, with builtins and its own loop var removed."""
+    if isinstance(node, ast.While):
+        return frozenset(), frozenset(_names_under(node.test) - _NONDIM_NAMES)
+    loopvars = frozenset(_names_under(node.target))
+    ids = _names_under(node.iter) - _NONDIM_NAMES - loopvars
+    return loopvars, frozenset(ids)
+
+
+def assign_dim(loopvars, idset, enclosing, fresh):
+    """Pick a dimension id for a loop. It shares a dimension with an enclosing
+    scaling loop when their identifier sets intersect, or when one loop's bound
+    references the other's iteration variable (the triangular ``arr[i:]`` case).
+    ``enclosing`` is a tuple of (loopvars, idset, dim) ordered outermost-first;
+    falls back to ``fresh`` (a unique id) when no dimension matches."""
+    for lv, ids, dim in reversed(enclosing):  # innermost-first
+        if (idset & ids) or (lv & idset) or (loopvars & ids):
+            return dim
+    return fresh
+
+
 class TreeIndex:
     """Result of a single tree walk: per-node context is stamped onto the nodes
     (``parent``, ``_func``, ``_loop_depth``, ``_scaling``, and on loops ``_sdepth``
-    / ``_has_sloop_anc``) and nodes are bucketed by type in ``ast.walk`` (BFS)
-    order so detectors iterate the same order they used to."""
+    / ``_has_sloop_anc`` / ``_dim_depth`` / ``_has_samedim_anc``) and nodes are
+    bucketed by type in ``ast.walk`` (BFS) order so detectors iterate the same
+    order they used to."""
 
     __slots__ = (
         "tree", "functions", "loops", "calls", "compares", "augassigns",
@@ -133,7 +172,11 @@ def _is_list_value(v) -> bool:
 
 
 # queue entry layout: (node, enclosing_func, func_chain, loop_depth,
-#                       scaling_depth_global, scaling_depth_in_func)
+#                       scaling_depth_global, scaling_depth_in_func,
+#                       enclosing_scaling_loops)
+# enclosing_scaling_loops: tuple of (loopvars, idset, dim) for the scaling loops
+# enclosing this node within the current function (reset at function boundaries),
+# used to give each loop a dimension id and measure same-dimension nesting depth.
 
 
 def index_tree(tree: ast.AST) -> TreeIndex:
@@ -148,7 +191,7 @@ def index_tree(tree: ast.AST) -> TreeIndex:
     idx = TreeIndex(tree)
     tree.parent = None
     q = deque()
-    q.append((tree, None, (), 0, 0, 0))
+    q.append((tree, None, (), 0, 0, 0, ()))
     while q:
         _index_node(idx, q.popleft(), q)
     return idx
@@ -156,11 +199,11 @@ def index_tree(tree: ast.AST) -> TreeIndex:
 
 def _index_node(idx: TreeIndex, item, q) -> None:
     """Stamp one node's context, bucket it, and enqueue its children."""
-    node, func, fchain, ldepth, sg, sf = item
+    node, func, fchain, ldepth, sg, sf, sloops = item
     node._func = func
     node._loop_depth = ldepth
 
-    cfunc, cchain, cldepth, csg, csf = func, fchain, ldepth, sg, sf
+    cfunc, cchain, cldepth, csg, csf, csloops = func, fchain, ldepth, sg, sf, sloops
     t = type(node)
 
     if t is ast.FunctionDef or t is ast.AsyncFunctionDef:
@@ -171,6 +214,7 @@ def _index_node(idx: TreeIndex, item, q) -> None:
         cfunc = node
         cchain = fchain + (node,)
         csf = 0  # scaling-loop depth is measured within the enclosing function
+        csloops = ()  # dimensions are tracked per-function (bigo is per-function)
     elif t is ast.For or t is ast.While:
         idx.loops.append(node)
         scaling = is_scaling_loop(node)
@@ -182,8 +226,19 @@ def _index_node(idx: TreeIndex, item, q) -> None:
             scaling = node._scaling = False
         node._sdepth = sf + (1 if scaling else 0)  # bigo: scaling depth incl. self
         node._has_sloop_anc = sg >= 1              # nested-loop: a scaling loop encloses it
+        node._dim_depth = 0
+        node._has_samedim_anc = False
         cldepth = ldepth + 1
         if scaling:
+            # Give the loop a dimension; it only deepens O(n^k) when its dimension
+            # repeats one already in the enclosing chain (else it's an independent
+            # factor — a product, not a power).
+            lv, ids = loop_dims(node)
+            fresh = (getattr(node, "lineno", 0), getattr(node, "col_offset", 0))
+            dim = assign_dim(lv, ids, sloops, fresh)
+            node._dim_depth = 1 + sum(1 for _, _, d in sloops if d == dim)
+            node._has_samedim_anc = node._dim_depth >= 2
+            csloops = sloops + ((lv, ids, dim),)
             csg = sg + 1
             csf = sf + 1
     elif t is ast.Call:
@@ -199,7 +254,16 @@ def _index_node(idx: TreeIndex, item, q) -> None:
 
     for child in ast.iter_child_nodes(node):
         child.parent = node
-        q.append((child, cfunc, cchain, cldepth, csg, csf))
+        # A `for` evaluates its target/iterable once in the enclosing scope, not
+        # per iteration — so those children keep this loop's *outer* depth; only
+        # the body/orelse run repeatedly. (A `while` re-checks its test every
+        # iteration, so it gets no such exception.) Without this, a sort/membership
+        # call in a top-level loop's iterable (`for x in sorted(a):`) is wrongly
+        # seen as "inside a loop" and flagged.
+        if t is ast.For and (child is node.iter or child is node.target):
+            q.append((child, cfunc, cchain, ldepth, sg, sf, sloops))
+        else:
+            q.append((child, cfunc, cchain, cldepth, csg, csf, csloops))
 
 
 def _attr_self_call(idx: TreeIndex, node: ast.Call, fchain) -> None:
