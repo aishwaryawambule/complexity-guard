@@ -61,6 +61,7 @@ dependency is installed.
   supported file. Python is always covered; other languages are covered when
   `tree-sitter` is installed in the Python that runs the hook.
 - On demand: `/complexity path/to/file`, or `complexity-guard path/to/file [--json]`.
+  Use `complexity-guard --version` to print the installed version.
 
 ## Which `python3` runs the hook
 

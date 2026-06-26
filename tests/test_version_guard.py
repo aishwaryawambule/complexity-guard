@@ -20,6 +20,8 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 PLUGIN_JSON = ROOT / "plugin" / ".claude-plugin" / "plugin.json"
 PYPROJECT = ROOT / "pyproject.toml"
+SRC_INIT = ROOT / "src" / "complexity_guard" / "__init__.py"
+LIB_INIT = ROOT / "plugin" / "lib" / "complexity_guard" / "__init__.py"
 TAG_PREFIX = "complexity-guard--v"
 
 
@@ -42,6 +44,11 @@ def _pyproject_version() -> str | None:
     return m.group(1) if m else None
 
 
+def _init_version(path: Path) -> str | None:
+    m = re.search(r'(?m)^__version__\s*=\s*"([^"]+)"', path.read_text())
+    return m.group(1) if m else None
+
+
 def _release_tags():
     r = _git("tag", "--list", f"{TAG_PREFIX}*")
     tags = []
@@ -53,6 +60,20 @@ def _release_tags():
             except ValueError:
                 pass
     return tags
+
+
+def test_package_version_matches_manifest():
+    # The package __version__ (what `complexity-guard --version` and
+    # `complexity_guard.__version__` report) must track plugin.json. release.sh
+    # bumps src/__init__.py in lockstep; bundle.sh copies it to plugin/lib.
+    pv = _plugin_version()
+    assert _init_version(SRC_INIT) == pv, (
+        "src/complexity_guard/__init__.py __version__ disagrees with plugin.json "
+        "— release.sh should bump it in lockstep with the manifests"
+    )
+    assert _init_version(LIB_INIT) == pv, (
+        "bundled __version__ is stale — run scripts/bundle.sh after bumping"
+    )
 
 
 def test_plugin_and_pyproject_versions_agree():

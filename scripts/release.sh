@@ -20,7 +20,8 @@ if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
   exit 1
 fi
 
-# 1. Bump plugin.json + pyproject.toml in lockstep.
+# 1. Bump plugin.json + pyproject.toml + package __version__ in lockstep.
+# (plugin/lib's copy of __init__.py is refreshed by bundle.sh in step 2.)
 python3 - "$VERSION" <<'PY'
 import json, re, sys, pathlib
 v = sys.argv[1]
@@ -29,7 +30,9 @@ d = json.loads(pj.read_text()); d["version"] = v
 pj.write_text(json.dumps(d, indent=2) + "\n")
 pp = pathlib.Path("pyproject.toml")
 pp.write_text(re.sub(r'(?m)^version\s*=\s*"[^"]+"', f'version = "{v}"', pp.read_text(), count=1))
-print(f"bumped plugin.json + pyproject.toml -> {v}")
+init = pathlib.Path("src/complexity_guard/__init__.py")
+init.write_text(re.sub(r'(?m)^__version__\s*=\s*"[^"]+"', f'__version__ = "{v}"', init.read_text(), count=1))
+print(f"bumped plugin.json + pyproject.toml + __init__.py -> {v}")
 PY
 
 # 2. Re-bundle the shipped tree and run the suite (guard included).

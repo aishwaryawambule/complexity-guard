@@ -1,6 +1,9 @@
 import json
 import sys
 
+import pytest
+
+import complexity_guard
 import complexity_guard.cli as cli
 from complexity_guard.cli import main
 
@@ -76,3 +79,28 @@ def test_cli_clean_file(tmp_path, capsys):
     out = capsys.readouterr().out
     assert rc == 0
     assert "no complexity" in out.lower()
+
+def test_cli_version_flag(capsys):
+    # --version reports the package version and exits 0 — even with no file arg.
+    with pytest.raises(SystemExit) as exc:
+        main(["--version"])
+    assert exc.value.code == 0
+    out = capsys.readouterr().out
+    assert complexity_guard.__version__ in out
+
+def test_cli_version_flag_does_not_import_analyzer(monkeypatch, capsys):
+    # --version must work without the analyzer (it runs under a bare python3
+    # before any re-exec). Poison the import so a regression that pulls the
+    # analyzer in for --version fails loudly here.
+    import builtins
+    real_import = builtins.__import__
+
+    def _boom(name, *args, **kwargs):
+        if name.endswith("analyze") or name == "complexity_guard.analyze":
+            raise AssertionError("--version must not import the analyzer")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", _boom)
+    with pytest.raises(SystemExit) as exc:
+        main(["--version"])
+    assert exc.value.code == 0
